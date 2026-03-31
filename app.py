@@ -24,38 +24,6 @@ def home():
 
 
 # ---------- API TO RECEIVE DATA ----------
-@app.route("/api/data")
-def receive_data():
-    try:
-        key = request.args.get("key")
-
-        if key != os.environ.get("SECRET_KEY"):
-            return jsonify({"status": "unauthorized"})
-
-        s1 = request.args.get("s1")
-        s2 = request.args.get("s2")
-        s3 = request.args.get("s3")
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        query = """
-        INSERT INTO sensor_db (sensor1, sensor2, sensor3, timestamp)
-        VALUES (%s, %s, %s, NOW())
-        """
-
-        cursor.execute(query, (s1, s2, s3))
-        conn.commit()
-
-        cursor.close()
-        conn.close()
-
-        return jsonify({"status": "success"})
-
-    except Exception as e:
-        print("INSERT ERROR:", e)
-        return jsonify({"status": "error", "message": str(e)})
-
 
 # ---------- API TO FETCH DATA ----------
 @app.route("/api/getdata")
@@ -75,7 +43,20 @@ def get_data():
         data = cursor.fetchall()
         cursor.close()
         conn.close()
+@app.route("/api/data")
+def receive_data():
+    key = request.args.get("key")
+    server_key = os.environ.get("SECRET_KEY")
 
+    print("Received key:", key)
+    print("Server key:", server_key)
+
+    if key != server_key:
+        return jsonify({
+            "status": "unauthorized",
+            "received": key,
+            "expected": server_key
+        })
         for row in data:
             if row["timestamp"]:
                 dt = row["timestamp"].replace(tzinfo=timezone.utc)
