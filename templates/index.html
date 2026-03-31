@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP8266 Control Panel</title>
+
+    <style>
+        body {
+            font-family: Arial;
+            text-align: center;
+            background: #f4f6f9;
+        }
+
+        h1 {
+            background: #007BFF;
+            color: white;
+            padding: 10px;
+        }
+
+        button {
+            padding: 10px 15px;
+            margin: 5px;
+            border: none;
+            cursor: pointer;
+            background: #28a745;
+            color: white;
+            border-radius: 5px;
+        }
+
+        button.stop {
+            background: #dc3545;
+        }
+
+        table {
+            border-collapse: collapse;
+            margin: auto;
+            width: 90%;
+            background: white;
+            margin-top: 10px;
+        }
+
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+        }
+
+        th {
+            background: #007BFF;
+            color: white;
+        }
+
+        /* Center search blocks */
+        .search-block {
+            margin: 20px auto;
+            width: 70%;
+            text-align: center;
+        }
+
+        .search input[type="text"],
+        .search input[type="datetime-local"] {
+            padding: 6px;
+            margin: 5px;
+            width: 200px;
+        }
+
+        .search button {
+            margin: 5px 0;
+        }
+
+        #dataSection {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>ESP8266 Control Panel</h1>
+
+<button onclick="startData()">Start</button>
+<button class="stop" onclick="stopData()">Stop</button>
+<button onclick="toggleData()">Show / Hide Data</button>
+
+<h3>Status: <span id="status">Unknown</span> | WiFi Signal: <span id="wifi">--</span></h3>
+
+<!-- Centered: Search by Date Range -->
+<div class="search-block">
+    <div class="search">
+        <h4>Search by Date Range</h4>
+        <input type="datetime-local" id="start_date" placeholder="Start Date" />
+        <input type="datetime-local" id="end_date" placeholder="End Date" />
+        <button onclick="searchByDate()">Search Dates</button>
+    </div>
+</div>
+
+<!-- Centered: Custom SQL Query -->
+<div class="search-block">
+    <div class="search">
+        <h4>Custom SQL Query (SELECT only)</h4>
+        <input type="text" id="query" placeholder="Enter SQL query (e.g. SELECT * FROM sensor_db WHERE id BETWEEN 100 AND 200)" />
+        <button onclick="runQuery()">Run Query</button>
+    </div>
+</div>
+
+<div id="dataSection">
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>S1</th>
+                <th>S2</th>
+                <th>S3</th>
+                <th>Date</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody">
+        </tbody>
+    </table>
+</div>
+
+<script>
+console.log("JS loaded");
+
+// PARAMETERS
+const UPDATE_INTERVAL_MS = 5000;   // 5 seconds
+const TIMEOUT_MS = 15000;          // 15 seconds → Disconnected
+
+let interval = null;
+
+// ==================== BUTTONS ====================
+
+function startData() {
+    if (!interval) {
+        fetchData();
+        interval = setInterval(fetchData, UPDATE_INTERVAL_MS);
+    }
+}
+
+function stopData() {
+    clearInterval(interval);
+    interval = null;
+    document.getElementById("status").innerText = "Stopped";
+    document.getElementById("wifi").innerText = "--";
+}
+
+function toggleData() {
+    const section = document.getElementById("dataSection");
+    section.style.display = section.style.display === "none" ? "block" : "none";
+}
+
+// ==================== STATUS LOGIC (CONNECT/DISCONNECT) ====================
+// Only use /api/getdata; never call /api/data from JS
+
+function fetchData() {
+    fetch("/api/getdata")
+    .then(response => {
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        return response.json();
+    })
+    .then(data => {
+        const table = document.getElementById("tableBody");
+        table.innerHTML = "";
+
+        if (!data || !Array.isArray(data) || data.length === 0) {
+            document.getElementById("status").innerText = "No Data (no records in DB)";
+            document.getElementById("wifi").innerText = "--";
+            return;
+        }
+
+        // Use latest row
+        const latest = data[0];
+        const now = Date.now();
+
+        // Parse "29/03/2026 18:54:21" to ms
+        let latestTime = null;
+        try {
+            const [dmy, time] = latest.timestamp.split(" ", 2);
+            const [day, month, year] = dmy.split("/").map(Number);
+            const [h, m, s] = time.split(":").map(Number);
+
+            const dt = new Date(year, month - 1, day, h, m, s);
+            latestTime = dt.getTime();
+        } catch (e) {
+            latestTime = now;
+        }
+
+        const TIME_WINDOW_MS = 30000;  // 30 seconds (more generous)
+
+        if (now - latestTime > TIME_WINDOW_MS) {
+            document.getElementById("status").innerText = "Disconnected";
+            document.getElementById("wifi").innerText = "--";
+        } else {
+            document.getElementById("status").innerText = "Connected";
+            document.getElementById("wifi").innerText = "--";
+        }
+
+        // Fill table
+        data.forEach(row => {
+            const tr = `<tr>
+                <td>${row.id}</td>
+                <td>${row.sensor1}</td>
+                <td>${row.sensor2}</td>
+                <td>${row.sensor3}</td>
+                <td>${row.timestamp}</td>
+            </tr>`;
+            table.innerHTML += tr;
+        });
+    })
+    .catch(err => {
+        console.log("FETCH ERROR:", err);
+        document.getElementById("status").innerText = "Error (no data)";
+        document.getElementById("wifi").innerText = "--";
+    });
+}
+// ==================== SEARCH BY DATE RANGE ====================
+
+function searchByDate() {
+    const start = document.getElementById("start_date").value;
+    const end = document.getElementById("end_date").value;
+
+    if (!start || !end) {
+        alert("Please select both start and end date.");
+        return;
+    }
+
+    const startMySQL = start + ":00";
+    const endMySQL = end + ":00";
+
+    fetch(`/api/search/date?start=${encodeURIComponent(startMySQL)}&end=${encodeURIComponent(endMySQL)}`)
+    .then(response => response.json())
+    .then(data => {
+        const table = document.getElementById("tableBody");
+        table.innerHTML = "";
+
+        if (!data || data.length === 0) {
+            document.getElementById("status").innerText = "No Records Found";
+            document.getElementById("wifi").innerText = "--";
+            return;
+        }
+
+        document.getElementById("status").innerText = "Search OK";
+        document.getElementById("wifi").innerText = "--";
+
+        data.forEach(row => {
+            const tr = `<tr>
+                <td>${row.id}</td>
+                <td>${row.sensor1}</td>
+                <td>${row.sensor2}</td>
+                <td>${row.sensor3}</td>
+                <td>${row.timestamp}</td>
+            </tr>`;
+            table.innerHTML += tr;
+        });
+    })
+    .catch(err => {
+        console.log("Search by date error:", err);
+        document.getElementById("status").innerText = "Search Error";
+        document.getElementById("wifi").innerText = "--";
+    });
+}
+
+// ==================== CUSTOM SQL QUERY ====================
+function runQuery() {
+    const q = document.getElementById("query").value.trim();
+    if (!q) {
+        alert("Enter a query.");
+        return;
+    }
+
+    fetch(`/api/search/query?q=${encodeURIComponent(q)}`)
+    .then(response => response.json())
+    .then(data => {
+        const table = document.getElementById("tableBody");
+        table.innerHTML = "";
+
+        if (data.error) {
+            alert("Query error: " + data.error);
+            return;
+        }
+
+        if (Array.isArray(data) && data.length > 0) {
+            // SELECT result
+            document.getElementById("status").innerText = "Query OK (SELECT)";
+            document.getElementById("wifi").innerText = "--";
+
+            data.forEach(row => {
+                const tr = `<tr>
+                    <td>${row.id}</td>
+                    <td>${row.sensor1}</td>
+                    <td>${row.sensor2}</td>
+                    <td>${row.sensor3}</td>
+                    <td>${row.timestamp}</td>
+                </tr>`;
+                table.innerHTML += tr;
+            });
+        } else if (data.status === "ok") {
+            // INSERT / UPDATE / DELETE executed
+            document.getElementById("status").innerText = "Query OK (non‑SELECT)";
+            document.getElementById("wifi").innerText = "--";
+            alert(
+                "Query executed successfully.\n" +
+                "Affected rows: " + data.affected_rows
+            );
+        } else {
+            document.getElementById("status").innerText = "No Records Found";
+            document.getElementById("wifi").innerText = "--";
+        }
+    })
+    .catch(err => {
+        console.log("Custom query error:", err);
+        document.getElementById("status").innerText = "Query Error";
+        document.getElementById("wifi").innerText = "--";
+    });
+}
+</script>
+
+</body>
+</html>
