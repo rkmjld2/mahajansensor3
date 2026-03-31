@@ -48,26 +48,11 @@ def receive_data():
     key = request.args.get("key")
     server_key = os.environ.get("SECRET_KEY")
 
-    print("Received key:", key)
-    print("Server key:", server_key)
-
-    if key != server_key:
-        return jsonify({
-            "status": "unauthorized",
-            "received": key,
-            "expected": server_key
-        })
-        for row in data:
-            if row["timestamp"]:
-                dt = row["timestamp"].replace(tzinfo=timezone.utc)
-                ist = dt + timedelta(hours=5, minutes=30)
-                row["timestamp"] = ist.strftime("%d/%m/%Y %H:%M:%S")
-
-        return jsonify(data)
-
-    except Exception as e:
-        print("FETCH ERROR:", e)
-        return jsonify([])
+    return jsonify({
+        "received_key": key,
+        "server_key": server_key,
+        "match": key == server_key
+    })
 
 
 # ---------- API SEARCH BY DATE ----------
