@@ -23,9 +23,9 @@ def get_db_connection():
 def debug():
     return {
         "DB_HOST": os.environ.get("DB_HOST"),
-        "SECRET_KEY": os.environ.get("SECRET_KEY"),
-        "KEY_FROM_URL": request.args.get("key"),
-        "KEY_MATCH": request.args.get("key") == os.environ.get("SECRET_KEY")
+        "SECRET_KEY": os.environ.get("SECRET_KEY")[:10] + "..." if os.environ.get("SECRET_KEY") else "MISSING",
+        "SECRET_KEY_EXISTS": bool(os.environ.get("SECRET_KEY")),
+        "FULL_ENV_VARS": [k for k in os.environ if k.startswith('DB_') or k == 'SECRET_KEY']
     }
 
 # ---------- API TO RECEIVE DATA ----------
