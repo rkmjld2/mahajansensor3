@@ -45,15 +45,7 @@ def get_data():
         conn.close()
 @app.route("/api/data")
 def receive_data():
-    key = request.args.get("key")
-    server_key = os.environ.get("SECRET_KEY")
-
-    return jsonify({
-        "received_key": key,
-        "server_key": server_key,
-        "match": key == server_key
-    })
-
+    return jsonify({"status": "NEW CODE WORKING"})
 
 # ---------- API SEARCH BY DATE ----------
 @app.route("/api/search/date")
